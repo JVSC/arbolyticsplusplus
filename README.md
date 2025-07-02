@@ -151,7 +151,7 @@ O sistema cria automaticamente templates para os seguintes padrões:
 
 
 
-## 🤝 Contribuição
+## Contribuição
 
 Para contribuir com o projeto:
 
@@ -160,6 +160,3 @@ Para contribuir com o projeto:
 3. Faça commit das mudanças
 4. Abra um Pull Request
 
-## 📄 Licença
-
-Este projeto está licenciado sob a licença MIT - veja o arquivo LICENSE para detalhes.
