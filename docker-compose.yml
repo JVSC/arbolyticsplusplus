@@ -10,6 +10,7 @@ services:
     depends_on:
       - redis
       - setup
+      - kibana
 
   celery:
     image: jvsc07/arbolytics_tasks:latest
@@ -18,7 +19,7 @@ services:
     depends_on:
       - redis
       - setup
-
+      - kibana
   frontend:
     image: jvsc07/arbolytics_frontend:latest
     ports:
@@ -30,6 +31,7 @@ services:
     restart: unless-stopped
     networks:
       - arbolytics-network
+      - kibana
 
   redis:
     image: redis:7-alpine
