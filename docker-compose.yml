@@ -31,7 +31,6 @@ services:
     restart: unless-stopped
     networks:
       - arbolytics-network
-      - kibana
 
   redis:
     image: redis:7-alpine
