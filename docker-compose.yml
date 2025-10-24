@@ -1,9 +1,7 @@
-version: '3.8'
+
 services:
   flask:
-    build:
-      context: .
-      dockerfile: Dockerfile.flask
+    image: jvsc07/arbolytics_api:latest
     command: pdm run start
     restart: unless-stopped
     ports:
@@ -13,18 +11,14 @@ services:
       - setup
       - kibana
 
-
   celery:
-    build:
-      context: .
-      dockerfile: Dockerfile.celery
+    image: jvsc07/arbolytics_tasks:latest
     command: pdm run tasks
     restart: unless-stopped
     depends_on:
       - redis
       - setup
       - kibana
-
   frontend:
     image: jvsc07/arbolytics_frontend:latest
     ports:
