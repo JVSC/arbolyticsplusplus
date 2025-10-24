@@ -81,6 +81,31 @@ docker-compose down
 docker-compose down -v
 ```
 
+## Atualizar imagens Docker
+
+Quando houver atualizações de imagens (seja para a API, frontend ou serviços auxiliares) você tem duas opções principais: puxar imagens públicas atualizadas ou rebuildar imagens locais.
+
+1) Puxar imagens publicadas (mais simples)
+
+```bash
+# Puxa as últimas imagens definidas no docker-compose
+docker-compose pull
+
+# Reinicia os serviços aplicando as imagens novas
+docker-compose up -d
+```
+
+2) Rebuildar imagens locais (se estiver desenvolvendo ou mudou o Dockerfile)
+
+```bash
+# Rebuilda todas as imagens no compose, ignorando cache se necessário
+docker-compose build --no-cache
+
+# Ou somente rebuildar e subir um serviço específico (ex.: api)
+docker-compose build --no-cache api
+docker-compose up -d --no-deps --build api
+```
+
 ## Serviços Disponíveis
 
 ### API Flask
@@ -97,7 +122,7 @@ docker-compose down -v
 - **Tecnologias**: Vue.js, Vite, Tailwind CSS
 
 ### Elasticsearch Cluster
-- **URLs**: 
+- **URLs**:
   - Nó 1: https://localhost:9200
   - Nós 2 e 3: Acesso interno apenas
 - **Descrição**: Cluster de 3 nós para armazenamento e busca de dados
@@ -135,7 +160,7 @@ docker-compose down -v
 
 ### Usuários Criados Automaticamente
 1. **elastic**: Usuário superadmin do Elasticsearch
-2. **kibana_system**: Usuário para conexão Kibana-Elasticsearch  
+2. **kibana_system**: Usuário para conexão Kibana-Elasticsearch
 3. **arbolytics**: Usuário da aplicação com privilégios de superuser
 
 ## Índices Elasticsearch

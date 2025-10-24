@@ -1,3 +1,4 @@
+version: '3.8'
 
 services:
   flask:
@@ -10,6 +11,8 @@ services:
       - redis
       - setup
       - kibana
+    networks:
+      - elastic
 
   celery:
     image: jvsc07/arbolytics_tasks:latest
@@ -19,6 +22,9 @@ services:
       - redis
       - setup
       - kibana
+    networks:
+      - elastic
+
   frontend:
     image: jvsc07/arbolytics_frontend:latest
     ports:
@@ -28,6 +34,8 @@ services:
     environment:
       - NODE_ENV=development
     restart: unless-stopped
+    networks:
+      - elastic
 
   redis:
     image: redis:7-alpine
@@ -41,30 +49,29 @@ services:
       retries: 5
     ports:
       - "6379:6379"
+    networks:
+      - elastic
+
   setup:
     image: docker.elastic.co/elasticsearch/elasticsearch:${STACK_VERSION}
+    user: "0"
     volumes:
       - certs:/usr/share/elasticsearch/config/certs
-    user: "0"
     command: >
       bash -c '
-      if [ x${ELASTIC_PASSWORD} == x ]; then
-        echo "Set the ELASTIC_PASSWORD environment variable in the .env file";
-        exit 1;
-      elif [ x${KIBANA_PASSWORD} == x ]; then
-        echo "Set the KIBANA_PASSWORD environment variable in the .env file";
-        exit 1;
-      elif [ x${ARBOLYTICS_PASSWORD} == x ]; then
-        echo "Set the ARBOLYTICS_PASSWORD environment variable in the .env file";
+      if [ x${ELASTIC_PASSWORD} == x ] || [ x${KIBANA_PASSWORD} == x ] || [ x${ARBOLYTICS_PASSWORD} == x ]; then
+        echo "Missing required environment variables (ELASTIC_PASSWORD, KIBANA_PASSWORD, ARBOLYTICS_PASSWORD)";
         exit 1;
       fi;
+
       if [ ! -f config/certs/ca.zip ]; then
         echo "Creating CA";
         bin/elasticsearch-certutil ca --silent --pem -out config/certs/ca.zip;
         unzip config/certs/ca.zip -d config/certs;
       fi;
+
       if [ ! -f config/certs/certs.zip ]; then
-        echo "Creating certs";
+        echo "Creating certs for single-node setup";
         echo -ne \
         "instances:\n"\
         "  - name: es01\n"\
@@ -73,47 +80,53 @@ services:
         "      - localhost\n"\
         "    ip:\n"\
         "      - 127.0.0.1\n"\
-        "  - name: es02\n"\
-        "    dns:\n"\
-        "      - es02\n"\
-        "      - localhost\n"\
-        "    ip:\n"\
-        "      - 127.0.0.1\n"\
-        "  - name: es03\n"\
-        "    dns:\n"\
-        "      - es03\n"\
-        "      - localhost\n"\
-        "    ip:\n"\
-        "      - 127.0.0.1\n"\
         > config/certs/instances.yml;
-        bin/elasticsearch-certutil cert --silent --pem -out config/certs/certs.zip --in config/certs/instances.yml --ca-cert config/certs/ca/ca.crt --ca-key config/certs/ca/ca.key;
+        bin/elasticsearch-certutil cert --silent --pem \
+          -out config/certs/certs.zip \
+          --in config/certs/instances.yml \
+          --ca-cert config/certs/ca/ca.crt \
+          --ca-key config/certs/ca/ca.key;
         unzip config/certs/certs.zip -d config/certs;
       fi;
-      echo "Setting file permissions"
+
+      echo "Setting file permissions";
       chown -R root:root config/certs;
-      find . -type d -exec chmod 750 \{\} \;;
-      find . -type f -exec chmod 640 \{\} \;;
+      find . -type d -exec chmod 750 {} \;;
+      find . -type f -exec chmod 640 {} \;;
+
       echo "Waiting for Elasticsearch availability";
-      until curl -s --cacert config/certs/ca/ca.crt https://es01:9200 | grep -q "missing authentication credentials"; do sleep 30; done;
+      until curl -s --cacert config/certs/ca/ca.crt https://es01:9200 | grep -q "missing authentication credentials"; do sleep 10; done;
+
       echo "Setting kibana_system password";
-      until curl -s -X POST --cacert config/certs/ca/ca.crt -u "elastic:${ELASTIC_PASSWORD}" -H "Content-Type: application/json" https://es01:9200/_security/user/kibana_system/_password -d "{\"password\":\"${KIBANA_PASSWORD}\"}" | grep -q "^{}"; do sleep 10; done;
+      until curl -s -X POST --cacert config/certs/ca/ca.crt -u "elastic:${ELASTIC_PASSWORD}" \
+        -H "Content-Type: application/json" \
+        https://es01:9200/_security/user/kibana_system/_password \
+        -d "{\"password\":\"${KIBANA_PASSWORD}\"}" | grep -q "^{}"; do sleep 5; done;
+
       echo "Creating arbolytics master user";
-      until curl -s -X POST --cacert config/certs/ca/ca.crt -u "elastic:${ELASTIC_PASSWORD}" -H "Content-Type: application/json" https://es01:9200/_security/user/arbolytics -d "{\"password\":\"${ARBOLYTICS_PASSWORD}\",\"roles\":[\"superuser\"],\"full_name\":\"Arbolytics Master User\"}" | grep -q "created"; do sleep 10; done;
-      echo "Creating index template for sinan pattern";
-      curl -s -X PUT --cacert config/certs/ca/ca.crt -u "elastic:${ELASTIC_PASSWORD}" -H "Content-Type: application/json" https://es01:9200/_index_template/sinan-template -d "{\"index_patterns\":[\"sinan.*\"],\"template\":{\"settings\":{\"number_of_shards\":1,\"number_of_replicas\":1}}}";
-      echo "Creating index template for cnes pattern";
-      curl -s -X PUT --cacert config/certs/ca/ca.crt -u "elastic:${ELASTIC_PASSWORD}" -H "Content-Type: application/json" https://es01:9200/_index_template/cnes-template -d "{\"index_patterns\":[\"cnes-*\"],\"template\":{\"settings\":{\"number_of_shards\":1,\"number_of_replicas\":1}}}";
-      echo "Creating index template for id-cnes pattern";
-      curl -s -X PUT --cacert config/certs/ca/ca.crt -u "elastic:${ELASTIC_PASSWORD}" -H "Content-Type: application/json" https://es01:9200/_index_template/id-cnes-template -d "{\"index_patterns\":[\"id-cnes-*\"],\"template\":{\"settings\":{\"number_of_shards\":1,\"number_of_replicas\":1}}}";
-      echo "Creating index template for dados pattern";
-      curl -s -X PUT --cacert config/certs/ca/ca.crt -u "elastic:${ELASTIC_PASSWORD}" -H "Content-Type: application/json" https://es01:9200/_index_template/dados-template -d "{\"index_patterns\":[\"dados_*\"],\"template\":{\"settings\":{\"number_of_shards\":1,\"number_of_replicas\":1}}}";
+      until curl -s -X POST --cacert config/certs/ca/ca.crt -u "elastic:${ELASTIC_PASSWORD}" \
+        -H "Content-Type: application/json" \
+        https://es01:9200/_security/user/arbolytics \
+        -d "{\"password\":\"${ARBOLYTICS_PASSWORD}\",\"roles\":[\"superuser\"],\"full_name\":\"Arbolytics Master User\"}" | grep -q "created"; do sleep 5; done;
+
+      echo "Creating index templates";
+      for tmpl in sinan cnes id-cnes dados; do
+        curl -s -X PUT --cacert config/certs/ca/ca.crt \
+          -u "elastic:${ELASTIC_PASSWORD}" \
+          -H "Content-Type: application/json" \
+          https://es01:9200/_index_template/${tmpl}-template \
+          -d "{\"index_patterns\":[\"${tmpl}*\"],\"template\":{\"settings\":{\"number_of_shards\":1,\"number_of_replicas\":0}}}";
+      done;
+
       echo "All done!";
       '
     healthcheck:
       test: [ "CMD-SHELL", "[ -f config/certs/es01/es01.crt ]" ]
-      interval: 1s
-      timeout: 5s
-      retries: 120
+      interval: 5s
+      timeout: 10s
+      retries: 60
+    networks:
+      - elastic
 
   es01:
     depends_on:
@@ -150,10 +163,12 @@ services:
         soft: -1
         hard: -1
     healthcheck:
-      test: [ "CMD-SHELL", "curl -s --cacert config/certs/ca/ca.crt https://localhost:9200 | grep -q 'missing authentication credentials'" ]
+      test: ["CMD-SHELL", "curl -s --cacert config/certs/ca/ca.crt https://localhost:9200 | grep -q 'missing authentication credentials'"]
       interval: 10s
       timeout: 10s
       retries: 120
+    networks:
+      - elastic
 
   kibana:
     depends_on:
@@ -173,24 +188,19 @@ services:
       - ELASTICSEARCH_SSL_CERTIFICATEAUTHORITIES=config/certs/ca/ca.crt
     mem_limit: ${MEM_LIMIT}
     healthcheck:
-      test: [ "CMD-SHELL", "curl -s -I http://localhost:5601 | grep -q 'HTTP/1.1 302 Found'" ]
+      test: ["CMD-SHELL", "curl -s -I http://localhost:5601 | grep -q 'HTTP/1.1 302 Found'"]
       interval: 10s
       timeout: 10s
       retries: 120
-
+    networks:
+      - elastic
 
 volumes:
-  cache:
-    driver: local
   certs:
-    driver: local
   esdata01:
-    driver: local
-  esdata02:
-    driver: local
-  esdata03:
-    driver: local
   kibanadata:
-    driver: local
   redisdata:
-    driver: local
+
+networks:
+  elastic:
+    driver: bridge
